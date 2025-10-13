@@ -5,8 +5,11 @@ import numpy as np
 from io import BytesIO
 import soundfile as sf
 import matplotlib
-matplotlib.rcParams['font.family'] = 'Meiryo'  # または 'IPAexGothic', 'Noto Sans CJK JP'
+matplotlib.rcParams['font.family'] = 'sans-serif'
+matplotlib.rcParams['font.sans-serif'] = ['Hiragino Sans', 'Noto Sans CJK JP', 'IPAexGothic', 'Meiryo']
+
 import seaborn as sns
+import time
 
 #音源からテンポ（BPM）と拍タイミングの抽出
 def extract_bpm_and_beats(audio_path):
@@ -15,7 +18,7 @@ def extract_bpm_and_beats(audio_path):
     This wrapper keeps behavior but avoids UI logic inside the function.
     """
     try:
-        y, sr = librosa.load(audio_path, mono=False)
+        y, sr = librosa.load(audio_path, sr=None, mono=False)
     except Exception as e:
         st.error(f"音声読み込みに失敗しました: {e}")
         raise
@@ -248,47 +251,63 @@ def plot_bpms(bpms, title="テンポ変化", column="推定BPM"):
     ax.set_ylabel("BPM")
     st.pyplot(fig)
 
-st.title("🐈 もふもふミュージック～テンポ抽出～🎵")
+st.title("🐈 ～テンポ抽出～🎵")
 uploaded_file = st.file_uploader("音源ファイルをアップロード", type=["mp3", "wav"])
 
 if uploaded_file:
+    start_time = time.time()
+    
     try:
-        file_ext = uploaded_file.name.split('.')[-1].lower()
+        progress_bar = st.progress(0)
+        status_text = st.empty()
 
-        # ファイルを一度読み込んで保存
-        audio_bytes = uploaded_file.read()
-        audio_buffer = BytesIO(audio_bytes)
+        with st.spinner("🎵 音源を解析中です…しばらくお待ちください"):
+            status_text.text("ステップ1: 音源ファイルを読み込み中…")
+            progress_bar.progress(5)  # ステップ1: ファイル読み込み開始
+            file_ext = uploaded_file.name.split('.')[-1].lower()
 
-        # まず音声を読み込む（mono=False で読み込み）
-        try:
-            y, sr = librosa.load(audio_buffer, mono=False)
-        except Exception as e:
-            # fallback: write to tempfile and load
-            import tempfile, os
-            tmp_path = None
+            # ファイルを一度読み込んで保存
+            audio_bytes = uploaded_file.read()
+            audio_buffer = BytesIO(audio_bytes)
+            status_text.text("ステップ2: 音源データを解析中…")
+            progress_bar.progress(20)  # ステップ2: 音源読み込み
+
+
+            # まず音声を読み込む（mono=False で読み込み）
             try:
-                with tempfile.NamedTemporaryFile(suffix='.' + file_ext, delete=False) as tmp:
-                    tmp.write(audio_bytes)
-                    tmp.flush()
-                    tmp_path = tmp.name
-                y, sr = librosa.load(tmp_path, mono=False)
-            finally:
-                if tmp_path and os.path.exists(tmp_path):
-                    os.remove(tmp_path)
+               y, sr = librosa.load(audio_buffer, sr=None, mono=False)
+            except Exception as e:
+                # fallback: write to tempfile and load
+                import tempfile, os
+                tmp_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(suffix='.' + file_ext, delete=False) as tmp:
+                        tmp.write(audio_bytes)
+                        tmp.flush()
+                        tmp_path = tmp.name
+                        y, sr = librosa.load(tmp_path, sr=None, mono=False)
+                finally:
+                    if tmp_path and os.path.exists(tmp_path):
+                        os.remove(tmp_path)
 
-        # チャンネル選択 UI
-        channel = 'mix'
-        if isinstance(y, np.ndarray) and y.ndim == 2:
-            auto_select = st.checkbox("自動チャンネル選択を有効にする", value=True)
-            if auto_select:
-                auto_ch = choose_best_channel(y, sr)
-                st.info(f"自動選択: {auto_ch}")
-                channel = auto_ch
-            if st.checkbox("詳細オプションを表示"):
-                choice = st.radio("使用チャンネル", ["平均（モノラル）", "左", "右"])
-                mapping = {"平均（モノラル）": 'mix', "左": 'left', "右": 'right'}
-                channel = mapping[choice]
+            status_text.text("ステップ3: チャンネル選択…")
+            progress_bar.progress(35)  # ステップ3: チャンネル選択
+       
+            # チャンネル選択 UI
+            channel = 'mix'
+            if isinstance(y, np.ndarray) and y.ndim == 2:
+                auto_select = st.checkbox("自動チャンネル選択を有効にする", value=True)
+                if auto_select:
+                    auto_ch = choose_best_channel(y, sr)
+                    st.info(f"自動選択: {auto_ch}")
+                    channel = auto_ch
+                if st.checkbox("詳細オプションを表示"):
+                    choice = st.radio("使用チャンネル", ["平均（モノラル）", "左", "右"])
+                    mapping = {"平均（モノラル）": 'mix', "左": 'left', "右": 'right'}
+                    channel = mapping[choice]
 
+        status_text.text("ステップ4: テンポと拍を抽出中…")
+        progress_bar.progress(50)  # ステップ4: テンポ抽出
         # librosaやpydubで使う場合は audio_buffer を渡す
         tempo, y_mono, sr, beat_times = extract_bpm_and_beats_from_loaded(y, sr, channel=channel)
         if beat_times is None or len(beat_times) < 4:
@@ -296,9 +315,10 @@ if uploaded_file:
             raise RuntimeError("insufficient_beats")
 
         st.success(f"検出されたテンポ：{round(tempo)} BPM")
-
         beats_per_bar = st.number_input("1小節の拍数", min_value=1, max_value=12, value=4)
 
+        status_text.text("ステップ5: 拍補正中…")
+        progress_bar.progress(65)  # ステップ5: 拍補正
         # ズレを補正
         bar_segments = get_bar_segments(beat_times, beats_per_bar)
         corrected_bar = get_corrected_bar_times(bar_segments, tempo, beats_per_bar)
@@ -310,6 +330,8 @@ if uploaded_file:
             st.error("補正後の音声を生成できませんでした。")
             raise RuntimeError("empty_corrected_audio")
 
+        status_text.text("ステップ6: 正規化と保存中…")
+        progress_bar.progress(80)  # ステップ6: 正規化と保存
         # 出力前にピーク正規化（クリッピング回避）
         peak = np.max(np.abs(corrected_audio)) if isinstance(corrected_audio, np.ndarray) else None
         if peak and peak > 0:
@@ -318,16 +340,28 @@ if uploaded_file:
         # 補正済み音源を保存
         corrected_buffer = BytesIO()
         sf.write(corrected_buffer, corrected_audio, sr, format='WAV')
+        corrected_buffer.seek(0)
+        
+        progress_bar.progress(100)  # 完了！
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        st.success("🎉 すべての処理が完了しました！")
+        status_text.empty()
+        progress_bar.empty()
+        st.info(f"⏱ 処理時間：約 {elapsed_time:.2f} 秒")
+ 
 
         # ダウンロードボタン
         st.download_button("📥 補正済み音源をダウンロード", corrected_buffer.getvalue(), "corrected.wav", "audio/wav")
 
         tab1, tab2 = st.tabs(["元音源",  "補正済み"])
+        audio_format = 'audio/wav' if file_ext == 'wav' else 'audio/mp3'
         with tab1:
-             st.audio(audio_bytes, format='audio/wav')
+             st.audio(audio_bytes, format=audio_format)
         with tab2:
             corrected_buffer.seek(0)
-            st.audio(corrected_buffer.read(), format='audio/wav')
+            st.audio(corrected_buffer.read(), format=audio_format)
 
         bar_bpms = estimate_bar_bpms(bar_segments)
         st.subheader("小節ごとのテンポ推定")
