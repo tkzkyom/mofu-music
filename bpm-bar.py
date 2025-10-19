@@ -252,6 +252,7 @@ def plot_bpms(bpms, title="テンポ変化", column="推定BPM"):
     st.pyplot(fig)
 
 st.title("🐈 ～テンポ抽出～🎵")
+st.text("もうしわけありません。現在調整中です。しばらくお待ちください。")
 uploaded_file = st.file_uploader("音源ファイルをアップロード", type=["mp3", "wav"])
 
 if uploaded_file:
