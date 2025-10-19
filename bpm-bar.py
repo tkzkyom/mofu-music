@@ -253,6 +253,13 @@ def plot_bpms(bpms, title="テンポ変化", column="推定BPM"):
 
 st.title("🐈 ～テンポ抽出～🎵")
 st.text("もうしわけありません。現在調整中です。しばらくお待ちください。")
+st.text("よろしければ、下記から仮想ミキサーを体験してみてください。")
+st.markdown("""
+<a href="https://mofu-mix.streamlit.app/" target="_blank">
+    <button style='font-size:18px;padding:8px 16px;'>🎚️ 仮想ミキサーを開く</button>
+</a>
+""", unsafe_allow_html=True)
+
 uploaded_file = st.file_uploader("音源ファイルをアップロード", type=["mp3", "wav"])
 
 if uploaded_file:
